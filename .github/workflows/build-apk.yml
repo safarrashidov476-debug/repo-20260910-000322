@@ -1,0 +1,65 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Generate platform folders (if missing)
+        run: |
+          if [ ! -d "android/app/src/main/java" ] && [ ! -f "android/local.properties" ]; then
+            flutter create . --project-name ozbek_tv_mobile --org com.ozbektv
+          fi
+          # Ensure AndroidManifest has internet permission (already in repo)
+          flutter pub get
+
+      - name: Analyze code
+        run: flutter analyze --no-fatal-infos || true
+
+      - name: Build APK (release)
+        run: flutter build apk --release --split-per-abi
+
+      - name: List built APKs
+        run: ls -lh build/app/outputs/flutter-apk/
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ozbek-tv-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+
+      # Agar Release yaratilgan bo'lsa, APK ni release ga biriktiring
+      - name: Upload APK to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
